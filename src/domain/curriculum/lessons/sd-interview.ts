@@ -1,0 +1,43 @@
+import { defineLesson } from '../types';
+
+export default defineLesson({
+  id: "sd-interview",
+  part: "prac",
+  title: "Design framework & estimation",
+  minutes: 12,
+  objectives: ["Follow a 7-step design process","Do back-of-envelope estimates quickly","Choose technology through explicit trade-offs"],
+  predict: { q: "100 million daily users each make 10 requests a day. Roughly what’s the average QPS?", opts: ["About 1,000","About 12,000","About 100,000","About 1 million"], a: 1, reveal: "10⁹ requests ÷ ~10⁵ seconds ≈ 10⁴, or 11,574 exactly. Peak may be 2–5× that." },
+  practice: [
+    { kind: 'task', text: "Configure a workload that needs <b>over 100,000 peak QPS</b> (reads and writes).", check: ({ estimator: e }) => e !== undefined && e.peak > 100000 },
+    { kind: 'num', text: "100M DAU × 10 requests a day. What’s the average QPS? (nearest thousand)", answer: 12000, tol: 600, unit: "QPS" },
+    { kind: 'num', text: "1 million uploads a day, 2 MB each. How much storage per year, in TB?", answer: 730, tol: 40, unit: "TB" },
+    { kind: 'task', text: "Build a read-heavy workload with <b>at least 100 reads per write</b> that still peaks <b>below 10,000 QPS</b>.", check: ({ estimator: e }) => e !== undefined && e.readsPerWrite >= 100 && e.peak < 10000 },
+    { kind: 'task', text: "Configure a workload with <b>more than 1 GB/s</b> of average read egress, where a CDN becomes essential.", check: ({ estimator: e }) => e !== undefined && e.egressBps > 1e9 },
+    { kind: 'task', text: "Find a workload that stores <b>over 1 PB</b> in total while averaging <b>fewer than 1,000 writes per second</b>.", check: ({ estimator: e }) => e !== undefined && e.bytesTotal > 1e15 && e.writeQps < 1000 },
+    { kind: 'task', text: "Configure a high-QPS but small-data workload: <b>peak above 10,000 QPS</b> with <b>under 1 TB</b> stored in total.", check: ({ estimator: e }) => e !== undefined && e.peak > 10000 && e.bytesTotal < 1e12 },
+    { kind: 'num', text: "20M daily users make 5 requests each, and peak traffic is 4× the average. What peak QPS should you plan for? (nearest 100)", answer: 4600, tol: 150, unit: "QPS" },
+    { kind: 'num', text: "50M daily users each post 2 items a day, 1 KB each, kept for 3 years. How much storage is that, in TB?", answer: 110, tol: 5, unit: "TB" },
+    { kind: 'num', text: "3,500 reads a second, each returning a 300 KB response. What average egress bandwidth is that? (one decimal)", answer: 8.4, tol: 0.1, unit: "Gbit/s" },
+    { kind: 'num', text: "Peak load is 60,000 QPS. One server handles 2,500 QPS flat out, and you want to run at 60% utilization at peak. How many servers?", answer: 40, tol: 0, unit: "servers" },
+    { kind: 'num', text: "50M objects are touched in a day, and the hottest 20% should fit in cache at 2 KB each. How much cache memory is that, in GB?", answer: 20, tol: 0.5, unit: "GB" },
+  ],
+  quiz: [
+    { q: "What should you do first in a design interview?", opts: ["Draw the database schema","Clarify requirements and scale","Pick Kubernetes","Write code"], a: 1, why: "Requirements decide everything that follows." },
+    { q: "A read-heavy system at 100:1 reads to writes most benefits from…", opts: ["Caching and read replicas","Write-back caches only","Two-phase commit","Fewer indexes"], a: 0, why: "Scale the reads where the traffic actually is." },
+    { q: "When choosing a technology, a strong argument is…", opts: ["It’s trending","It fits the access pattern and the team can operate it","It’s the newest","A famous company uses it"], a: 1, why: "Fitting the access pattern and being able to run it matter more than popularity." },
+    { q: "Which of these is a non-functional requirement?", opts: ["Users can upload a photo","p99 latency under 200 ms at peak load","Users can follow other users","Users can search by hashtag"], a: 1, why: "Non-functional requirements describe qualities such as latency, availability, durability and cost. The other options are features users can do, which are functional requirements." },
+    { q: "A service averages 2,000 QPS and peaks at 3× the average. What should capacity planning target?", opts: ["About 2,000 QPS","About 6,000 QPS, plus headroom","About 600 QPS","About 18,000 QPS"], a: 1, why: "Systems fail at peak, not at the average, so size for average × peak factor and add headroom for failures and growth. Planning for the average leaves you with no margin at busy hours." },
+    { q: "A system adds 5 million rows a day, each about 2 KB. Roughly how much raw data does it add in a year?", opts: ["About 370 GB","About 3.7 TB","About 37 TB","About 3.7 PB"], a: 1, why: "5M × 2 KB = 10 GB a day, and × 365 is about 3.65 TB. Replication, indexes and growth multiply that, which is why you estimate before choosing storage." },
+    { q: "You chose eventual consistency for a social feed. Which justification is strongest in a design review?", opts: ["NoSQL is always faster than SQL","Seeing a post a few seconds late is acceptable for a feed, and it buys availability and low latency, while payments would need stronger guarantees","Strong consistency is impossible in distributed systems","It is simpler to explain"], a: 1, why: "A good trade-off statement names what you gave up, why that cost is tolerable for this use case, and where you would choose differently. Blanket claims about technologies don&apos;t show that reasoning." },
+    { q: "Which ordering of the design process is the most sensible?", opts: ["Requirements, estimates, API, data model, high-level design, deep dives, trade-offs","High-level design, requirements, API, estimates, trade-offs, deep dives","Data model, deep dives, requirements, API, estimates, high-level design, trade-offs","Estimates, high-level design, requirements, data model, API, trade-offs, deep dives"], a: 0, why: "Requirements shape the estimates, which shape the API and data model. Those feed the high-level design, and only then do deep dives and trade-offs make sense. Skipping ahead means designing for the wrong problem." },
+    { q: "An endpoint serves 1,000 requests a second, each response about 500 KB. What average outbound bandwidth is that?", opts: ["About 500 Mbit/s","About 4 Gbit/s","About 40 Gbit/s","About 500 Gbit/s"], a: 1, why: "1,000 × 500 KB is 500 MB/s, and × 8 bits per byte is 4 Gbit/s. That is more than a single 1 Gbit/s link, so a CDN or several egress points would be needed." },
+    { q: "A team of four needs relational data with transactions, about 50 GB, and 200 QPS. What is the most defensible choice?", opts: ["A sharded wide-column cluster, for future scale","A managed relational database with a replica","A custom storage engine","A different database for every table"], a: 1, why: "At this size one well-run relational database is plenty, and a managed service reduces operations work. Sharding and custom engines add costs the workload doesn&apos;t justify. You can revisit the choice if the estimates change." },
+  ],
+  explain: { prompt: "Walk through how you’d begin designing a URL shortener.", model: "Clarify: create and redirect, custom aliases?, scale of about 100M new URLs a month, reads 100× writes, low-latency redirects. Estimate: about 40 writes/s and 4k reads/s, roughly 500 bytes × 1.2B a year ≈ 600 GB. API: POST /urls, GET /{code}. Data: a key-value store from code to URL. Design: stateless app servers, a cache for hot codes, a CDN. Deep dives: ID generation, abuse, analytics through a queue." },
+  takeaways: ["Requirements, estimates, API, data, high-level design, deep dives, trade-offs.","1M requests a day ≈ 12 QPS, and peak is several times the average.","Name what you gave up and why."],
+  cards: [
+    ["Seconds per day", "86,400, roughly 10⁵."],
+    ["1 million requests per day", "About 12 requests per second."],
+    ["Design steps", "Requirements, estimates, API, data model, high-level design, deep dives, trade-offs."],
+  ],
+});

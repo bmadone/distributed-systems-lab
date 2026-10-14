@@ -1,0 +1,222 @@
+
+<!-- ============ TRACK · SYSTEM DESIGN FUNDAMENTALS ============ -->
+<section class="lesson" id="L-sd-intro" hidden><div class="core">
+  <div class="prose">
+    <p>When Netflix streamed the Paul vs. Tyson fight in November 2024, it reported 65 million concurrent streams, and many viewers saw buffering and freezes. The code that plays a video wasn't the problem. The hard part was everything around it: traffic spiking all at once, encoding pipelines, and delivery networks under a load nobody had tested at that size. <b>System design</b> is the discipline that deals with that layer.</p>
+    <p>System design is planning how a product works end to end under real conditions. You decide:</p>
+    <ul>
+      <li><b>The building blocks:</b> clients, load balancers, services, databases, caches, queues, CDNs.</li>
+      <li><b>How they interact:</b> APIs, sync or async calls, data flow.</li>
+      <li><b>How it behaves at scale:</b> traffic spikes, slow networks, failed machines, regional outages.</li>
+      <li><b>Which trade-offs to accept:</b> cost or reliability, latency or consistency, simplicity or flexibility.</li>
+    </ul>
+    <h3>Design, coding and architecture</h3>
+    <p>Coding asks <i>"how do I implement this correctly?"</i> System design asks <i>"how does the whole system stay correct, fast and available when reality hits?"</i> Coding failures are null pointers and logic bugs. Design failures are outages, cascading failures and data loss. <b>Software architecture</b> is the wider, longer-lived layer: the structure and principles shared across many systems in an organization. A specific system design works within that architecture.</p>
+    <h3>Monolith or microservices</h3>
+    <p>A <b>monolith</b> is one deployable unit. It's simple to build, test and debug, calls between parts are fast in-process function calls, and you scale it as one piece. <b>Microservices</b> split the product into independently deployable services, each owned by a team and scaled separately. You pay for that with network calls, data spread across services, and much more to operate. A common approach is to start with a well-structured monolith and split out services when team size or scale demands it.</p>
+    <h3>Requirements come first</h3>
+    <p><b>Functional requirements</b> say what the system does: "users can upload a video". <b>Non-functional requirements</b> say how well it must do it: "p99 latency under 200 ms", "99.95% availability", "no data loss once an upload is confirmed". Non-functional requirements drive most design decisions.</p>
+  </div>
+  <div class="panel">
+    <h4>Lab · Architecture explorer</h4>
+    <p class="hint">A typical scalable web application. Click any component to see what it does and what happens if it fails.</p>
+    <div class="svgbox"><svg id="ax-svg" viewBox="0 0 680 330" role="img" aria-label="Web architecture diagram"></svg></div>
+    <div id="ax-info"></div>
+  </div>
+  <div class="panel">
+    <div class="row"><h4>Lab · Functional or non-functional?</h4><span class="hint" id="rq-score"></span></div>
+    <div id="rq-list"></div>
+  </div>
+</div></section>
+
+<section class="lesson" id="L-sd-availability" hidden><div class="core">
+  <div class="prose">
+    <p><b>Availability</b> is the share of time a system does its job, usually written in "nines". It depends on how often things break (<b>MTBF</b>, mean time between failures) and how quickly you recover (<b>MTTR</b>, mean time to repair): availability = MTBF / (MTBF + MTTR). Halving recovery time helps as much as halving how often things break.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Availability</th><th>Downtime per year</th><th>Per 30-day month</th></tr></thead>
+      <tbody><tr><td>99% (two nines)</td><td>3.65 days</td><td>7.2 hours</td></tr><tr><td>99.9%</td><td>8.76 hours</td><td>43.2 minutes</td></tr><tr><td>99.99%</td><td>52.6 minutes</td><td>4.3 minutes</td></tr><tr><td>99.999%</td><td>5.26 minutes</td><td>26 seconds</td></tr></tbody>
+    </table></div>
+    <ul>
+      <li><b>In series</b> (A calls B, and both must work): multiply. 99.9% × 99.9% = 99.8%. Every extra dependency lowers availability.</li>
+      <li><b>In parallel</b> (any one of n copies is enough): 1 − (1 − A)<sup>n</sup>. Two 99% servers give 99.99%, assuming they fail independently. Shared power, shared configuration or shared deploys break that assumption.</li>
+    </ul>
+    <p><b>Fault tolerance</b> techniques: redundancy (active-active or active-passive), health checks with automatic failover, <b>graceful degradation</b> (show cached or partial results instead of an error), and limiting the <b>blast radius</b> with cells, availability zones and regions. In June 2019, a routine network configuration change at Google Cloud spread across regions and disrupted YouTube, Gmail and Google Cloud services for about four hours. Containing changes like that is part of the design.</p>
+  </div>
+  <div class="panel">
+    <h4>Lab · Availability builder</h4>
+    <p class="hint">Requests pass through every tier in series. Add instances to a tier to make it redundant.</p>
+    <div id="av-tiers" style="display:grid;gap:8px"></div>
+    <label class="chips"><input type="checkbox" id="av-degrade"> <span>App falls back to the database when the cache is down (graceful degradation)</span></label>
+    <div class="grid2" id="av-out"></div>
+  </div>
+</div></section>
+
+<section class="lesson" id="L-sd-comm" hidden><div class="core">
+  <div class="prose">
+    <h3>Synchronous or asynchronous</h3>
+    <p>In a <b>synchronous</b> call the caller waits for the answer. It's simple and gives immediate results, but the caller inherits the callee's latency and failures. In <b>asynchronous</b> communication the caller drops a message on a queue or log and moves on. Services are decoupled, spikes get absorbed and failures are contained. The cost is eventual results, harder debugging, and duplicates to handle.</p>
+    <p>Common patterns: <b>request-response</b>, <b>fire-and-forget</b>, <b>publish-subscribe</b> (one event, many consumers), <b>event streaming</b> (a durable, replayable log like Kafka), and for multi-step workflows, <b>choreography</b> (services react to each other's events) or <b>orchestration</b> (a central coordinator, as in sagas).</p>
+    <h3>API styles</h3>
+    <ul>
+      <li><b>REST:</b> resources and HTTP verbs. It's cacheable and universally understood, which makes it the default for public APIs.</li>
+      <li><b>GraphQL:</b> a single endpoint where the client asks for exactly the fields it needs. It's great for many different clients. Caching and protecting against expensive queries are harder.</li>
+      <li><b>gRPC and RPC:</b> typed contracts in Protocol Buffers over HTTP/2, which makes it fast, supports streaming and generates client code. It's common between internal services.</li>
+    </ul>
+    <h3>Serialization and protocols</h3>
+    <p><b>JSON</b> is readable but verbose. <b>Protobuf, Avro and Thrift</b> are compact binary formats with schemas. Evolve those schemas safely: add optional fields and never reuse field numbers. Underneath, <b>TCP</b> gives reliable, ordered streams and <b>UDP</b> gives fast, lossy packets, which suit voice, video and DNS. <b>HTTP/2</b> sends many requests over one connection, <b>HTTP/3</b> runs over QUIC on UDP, and <b>WebSockets</b> let the server push to the browser.</p>
+  </div>
+  <div class="panel">
+    <h4>Lab · Checkout call chain</h4>
+    <p class="hint">Checkout calls four services. Each is 99.5% available and takes 80 ms. Synchronous calls run one after another and must all succeed. Asynchronous calls go through a queue (99.99%, 5 ms to enqueue) and are processed later.</p>
+    <div id="cc-svcs" style="display:grid;gap:8px"></div>
+    <div class="grid2" id="cc-out"></div>
+  </div>
+  <div class="panel">
+    <div class="row"><h4>Lab · Choose the protocol or API style</h4><span class="hint" id="api-score"></span></div>
+    <div class="match" id="api-list"></div>
+  </div>
+</div></section>
+
+<section class="lesson" id="L-sd-storage" hidden><div class="core">
+  <div class="prose">
+    <h3>Storage types</h3>
+    <ul>
+      <li><b>Block storage</b> provides raw volumes, like Amazon EBS or a local SSD. It's low latency, and databases run on it.</li>
+      <li><b>File storage</b> is a shared hierarchical filesystem, like NFS or EFS, for workloads that expect files and folders.</li>
+      <li><b>Object storage</b> holds immutable objects under flat keys behind an HTTP API, like S3 or GCS. It scales almost without limit and is designed for 99.999999999% durability. Use it for media, backups and data lakes.</li>
+    </ul>
+    <h3>SQL, NoSQL and NewSQL</h3>
+    <p><b>Relational (SQL)</b> databases offer schemas, joins and ACID transactions, like PostgreSQL and MySQL. <b>NoSQL</b> comes in families tuned for specific access patterns: key-value (Redis, DynamoDB), document (MongoDB), wide-column (Cassandra) and graph (Neo4j). Many favor <b>BASE</b> (Basically Available, Soft state, Eventually consistent) over ACID. <b>NewSQL</b> databases (Spanner, CockroachDB, TiDB) keep SQL and ACID while scaling horizontally with consensus.</p>
+    <h3>Indexes</h3>
+    <p>An index trades write speed and space for read speed. <b>B-trees</b> update pages in place, are read-optimized and handle range queries well. They're the default in relational databases. <b>LSM trees</b> buffer writes in memory, flush sorted files and merge them in the background, which makes them write-optimized (Cassandra, RocksDB). A composite index on (a, b) helps queries that filter on a, or on a and b, but not on b alone. Use <code>EXPLAIN</code> to check whether the query plan actually uses your index.</p>
+    <h3>Spatial indexes</h3>
+    <p>"Find drivers near me" needs 2D lookups. A <b>quadtree</b> splits a region into four cells whenever a cell holds too many points, so dense areas get fine cells and empty areas stay coarse. <b>R-trees</b> group nearby objects into bounding rectangles (PostGIS). <b>Geohashes</b> encode locations as strings, so nearby places share a prefix.</p>
+  </div>
+  <div class="panel">
+    <h4>Lab · Quadtree search</h4>
+    <p class="hint">300 drivers, clustered in two neighborhoods. Click the map to search the box around that spot. The quadtree only checks points in cells that overlap the box.</p>
+    <div class="slider"><label for="qt-cap">Max points per cell before splitting</label><output id="qt-cap-out"></output><input type="range" id="qt-cap" min="1" max="64" value="64"></div>
+    <div class="svgbox" style="max-width:520px;justify-self:center"><svg id="qt-svg" viewBox="0 0 400 400" role="img" tabindex="0" aria-label="Quadtree map. Click to search, or use arrow keys to move the search box" style="cursor:crosshair"></svg></div>
+    <div class="grid2" id="qt-out"></div>
+  </div>
+  <div class="panel">
+    <div class="row"><h4>Lab · Pick the database</h4><span class="hint" id="db-score"></span></div>
+    <div class="match" id="db-list"></div>
+  </div>
+</div></section>
+
+<section class="lesson" id="L-sd-scaling" hidden><div class="core">
+  <div class="prose">
+    <p><b>Vertical scaling</b> means a bigger machine: simple, but there's a ceiling. <b>Horizontal scaling</b> means more machines. It's easy for <b>stateless</b> services behind a load balancer. A layer-4 balancer routes TCP connections and a layer-7 balancer routes HTTP requests. Common algorithms are round robin, least connections, or consistent hashing when you need sticky routing.</p>
+    <p>When something is slow or overloaded, four main tools apply. Each fixes one problem and brings a new one:</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Tool</th><th>Use it when</th><th>New problem</th></tr></thead>
+      <tbody>
+        <tr><td><b>Cache</b></td><td>The same data is read much more often than it changes</td><td>Stale data, invalidation, stampedes when a popular entry expires</td></tr>
+        <tr><td><b>Queue</b></td><td>Work is slow, spiky or can happen later</td><td>Lag, ordering, duplicates, monitoring queue depth</td></tr>
+        <tr><td><b>Replicate</b></td><td>Reads overload one node, or you need failover</td><td>Replica lag, failover correctness</td></tr>
+        <tr><td><b>Shard</b></td><td>Writes or data size exceed one node</td><td>Cross-shard queries and transactions, rebalancing, hot keys</td></tr>
+      </tbody>
+    </table></div>
+    <h3>Caching strategies</h3>
+    <ul>
+      <li><b>Cache-aside:</b> the app checks the cache, and on a miss reads the database and fills the cache. This is the most common approach.</li>
+      <li><b>Write-through:</b> each write goes to the cache and the database together. Reads are fresh, but writes are slower.</li>
+      <li><b>Write-back:</b> writes go to the cache and reach the database later. Writes are fast, but you risk losing them.</li>
+      <li><b>Eviction:</b> LRU (least recently used), LFU (least frequently used), or TTL expiry. A <b>CDN</b> is a cache at the network edge, close to users.</li>
+    </ul>
+    <p>Related patterns: <b>rate limiting</b> (token bucket), <b>CQRS</b> (separate models for reads and writes), <b>event sourcing</b> (store the events and derive state from them), and <b>change data capture</b> (stream database changes to other systems).</p>
+  </div>
+  <div class="panel">
+    <h4>Lab · LRU cache in front of a database</h4>
+    <p class="hint">1,000 products. Popularity follows a Zipf distribution: a few items get most of the traffic. Cache hits take 1 ms, and misses go to the database and take 21 ms.</p>
+    <div class="grid2">
+      <div class="slider"><label for="ch-size">Cache size <small>· items</small></label><output id="ch-size-out"></output><input type="range" id="ch-size" min="0" max="600" step="10" value="50"></div>
+      <div class="slider"><label for="ch-skew">Popularity skew <small>· Zipf s</small></label><output id="ch-skew-out"></output><input type="range" id="ch-skew" min="0.4" max="1.4" step="0.1" value="1"></div>
+    </div>
+    <div class="stats" id="ch-out"></div>
+  </div>
+  <div class="panel">
+    <div class="row"><h4>Lab · Cache, queue, replicate or shard?</h4><span class="hint" id="sc-score"></span></div>
+    <div class="match" id="sc-list"></div>
+  </div>
+</div></section>
+
+<section class="lesson" id="L-sd-observability" hidden><div class="core">
+  <div class="prose">
+    <h3>Observability: metrics, logs, traces</h3>
+    <ul>
+      <li><b>Metrics</b> are numbers over time. They're cheap to store and good for dashboards and alerts. Track <b>RED</b> for services (Rate, Errors, Duration) and <b>USE</b> for resources (Utilization, Saturation, Errors).</li>
+      <li><b>Logs</b> are detailed records of individual events. Make them structured, as JSON with request IDs. They get expensive at high volume.</li>
+      <li><b>Traces</b> follow one request across services using trace and span IDs (OpenTelemetry), so you can see which hop was slow.</li>
+    </ul>
+    <p>An <b>SLI</b> is what you measure, such as the share of requests under 300 ms. An <b>SLO</b> is your target, such as 99.9% over 30 days. An <b>SLA</b> is a contract with penalties. The gap between 100% and your SLO is your <b>error budget</b>: while you have budget left, ship features. When it runs out, focus on reliability.</p>
+    <p class="callout warn"><b>Track percentiles, not averages.</b> An average of 50 ms can hide a p99 of 2 seconds. Tail latency also gets worse as requests fan out: if a page waits for 100 backends, the slowest one sets the page's speed.</p>
+    <h3>Processes, threads, concurrency</h3>
+    <p>A <b>process</b> has its own memory, which isolates it but makes it costly to create and to communicate with. <b>Threads</b> share their process's memory, which makes them cheap and fast to communicate between, but open to race conditions. <b>Concurrency</b> is handling many tasks over the same period by interleaving them. An event loop can do this on one core. <b>Parallelism</b> is running tasks at the same instant on several cores. <b>Amdahl's law</b> caps the speedup from parallelism: the part that must run serially limits you no matter how many cores you add. The OS scheduler and memory management (paging, the cost of context switches) set the per-machine limits you build on.</p>
+  </div>
+  <div class="panel">
+    <h4>Lab · Tail latency at scale</h4>
+    <p class="hint">Each backend answers in 10 ms, except 1% of the time when it takes 1 second. A user request waits for every backend it fans out to.</p>
+    <div class="slider"><label for="tl-n">Fan-out <small>· backends per request</small></label><output id="tl-n-out"></output><input type="range" id="tl-n" min="1" max="200" value="10"></div>
+    <div class="grid2" id="tl-out"></div>
+  </div>
+  <div class="panel">
+    <h4>Lab · Amdahl's law</h4>
+    <div class="grid2">
+      <div class="slider"><label for="am-p">Parallel share of the work</label><output id="am-p-out"></output><input type="range" id="am-p" min="0" max="100" value="90"></div>
+      <div class="slider"><label for="am-n">Cores</label><output id="am-n-out"></output><input type="range" id="am-n" min="1" max="128" value="8"></div>
+    </div>
+    <div class="grid2" id="am-out"></div>
+  </div>
+</div></section>
+
+<section class="lesson" id="L-sd-security" hidden><div class="core">
+  <div class="prose">
+    <p>The <b>CIA triad</b> sets security goals: <b>Confidentiality</b> (only authorized parties can read), <b>Integrity</b> (data can't be changed without detection) and <b>Availability</b> (the system stays usable, including under attack).</p>
+    <ul>
+      <li><b>Authentication</b> answers "who are you?" with passwords plus MFA, passkeys, OpenID Connect, or mutual TLS between services. <b>Authorization</b> answers "what are you allowed to do?" with role-based or attribute-based access control. Apply <b>least privilege</b>.</li>
+      <li><b>Symmetric encryption</b> (AES) uses one shared key and is fast. <b>Asymmetric encryption</b> (RSA, elliptic curves) uses a public and private key pair, for exchanging keys and making <b>digital signatures</b>. <b>Hashing</b> (SHA-256) is one-way and detects tampering. Store passwords with slow, salted hashes such as bcrypt or Argon2.</li>
+      <li><b>TLS</b> uses asymmetric cryptography during the handshake to agree on symmetric session keys. The server proves who it is with a certificate signed by a trusted authority (<b>PKI</b>). Encrypt data <b>in transit</b> (TLS everywhere) and <b>at rest</b> (keys in a key management service).</li>
+      <li><b>OAuth 2.0</b> is delegated authorization. An app gets a limited, revocable access token instead of your password. <b>OpenID Connect</b> adds identity on top of it.</li>
+    </ul>
+  </div>
+  <div class="panel">
+    <div class="row"><h4>Lab · Which part of CIA does it protect?</h4><span class="hint" id="cia-score"></span></div>
+    <div id="cia-list"></div>
+  </div>
+  <div class="panel">
+    <div class="row"><h4>Lab · Match threats to mitigations</h4><span class="hint" id="th-score"></span></div>
+    <div class="match" id="th-list"></div>
+  </div>
+</div></section>
+
+<section class="lesson" id="L-sd-interview" hidden><div class="core">
+  <div class="prose">
+    <p>Whether it's an interview or a real design review, a repeatable process keeps you from missing the requirements that matter.</p>
+    <ol>
+      <li><b>Clarify requirements.</b> Functional scope, non-functional targets, scale, and what's out of scope.</li>
+      <li><b>Estimate.</b> Back-of-envelope QPS, storage and bandwidth. They decide whether you need sharding or caching at all.</li>
+      <li><b>Define the API.</b> The main endpoints or events, with their inputs and outputs.</li>
+      <li><b>Model the data.</b> Entities, access patterns, and the choice of store.</li>
+      <li><b>Sketch the high-level design.</b> Clients, load balancers, services, storage, caches, queues.</li>
+      <li><b>Deep dive.</b> Bottlenecks, hot keys, failure modes, consistency choices.</li>
+      <li><b>Discuss trade-offs.</b> What you gave up and why, and what you'd change at 10× scale.</li>
+    </ol>
+    <p><b>Choosing technology:</b> match the access pattern first, then weigh how well your team knows it, how mature it is, what it costs to run, and whether a managed service fits. Boring technology you can operate usually beats exciting technology you can't.</p>
+    <p class="callout">Useful numbers: a day has 86,400 seconds, roughly 10⁵. One million requests a day is about 12 per second. Peak traffic is often 2–5× the average. Reads often outnumber writes 10:1 to 100:1.</p>
+  </div>
+  <div class="panel">
+    <h4>Lab · Back-of-envelope estimator</h4>
+    <div class="grid2">
+      <div class="slider"><label for="es-dau">Daily active users</label><output id="es-dau-out"></output><input type="range" id="es-dau" min="0" max="100" value="60"></div>
+      <div class="slider"><label for="es-wr">Writes per user per day</label><output id="es-wr-out"></output><input type="range" id="es-wr" min="1" max="50" value="2"></div>
+      <div class="slider"><label for="es-rr">Reads per write</label><output id="es-rr-out"></output><input type="range" id="es-rr" min="1" max="200" value="20"></div>
+      <div class="slider"><label for="es-sz">Size per write <small>· KB</small></label><output id="es-sz-out"></output><input type="range" id="es-sz" min="1" max="5000" value="10"></div>
+      <div class="slider"><label for="es-pk">Peak ÷ average</label><output id="es-pk-out"></output><input type="range" id="es-pk" min="1" max="10" value="3"></div>
+      <div class="slider"><label for="es-yr">Retention <small>· years</small></label><output id="es-yr-out"></output><input type="range" id="es-yr" min="1" max="10" value="5"></div>
+    </div>
+    <div class="stats" id="es-out"></div>
+    <div id="es-advice"></div>
+  </div>
+</div></section>

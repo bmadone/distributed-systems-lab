@@ -1,0 +1,45 @@
+import { matcherDone } from '../signals';
+import { defineLesson } from '../types';
+
+export default defineLesson({
+  id: "sd-scaling",
+  part: "sd",
+  title: "Scaling: cache, queue, replicate, shard",
+  minutes: 14,
+  objectives: ["Choose between caching, queuing, replication and sharding","Compare caching strategies and eviction policies","Explain why skewed workloads cache well"],
+  predict: { q: "A cache holds 5% of your products. Roughly what share of requests can it serve, with typical skewed popularity?", opts: ["About 5%","About 25%","Often over 50%","Nearly 0%"], a: 2, reveal: "Real traffic is skewed, and a small set of hot items gets most requests. A small cache can absorb a large share of reads." },
+  practice: [
+    { kind: 'task', text: "At skew 1.0, get a hit ratio of <b>at least 75%</b> while caching <b>no more than 300</b> items.", check: ({ cache: c }) => c !== undefined && Math.abs(c.skew - 1) < 0.01 && c.size <= 300 && c.hit >= 0.75 },
+    { kind: 'task', text: "Set skew to 0.5 and see how uniform traffic hurts caching: hit ratio below 40% with 200 items cached.", check: ({ cache: c }) => c !== undefined && c.skew <= 0.51 && c.size >= 200 && c.hit < 0.4 },
+    { kind: 'task', text: "Pick the right scaling tool for every scenario.", check: s => matcherDone(s, 'sc') },
+    { kind: 'task', text: "Average latency below <b>4 ms</b> while caching <b>at most 200</b> items. Popularity skew is your lever.", check: ({ cache: c }) => c !== undefined && c.latencyMs < 4 && c.size <= 200 },
+    { kind: 'task', text: "At skew <b>1.2 or lower</b>, push database load below <b>100 queries per 1,000 requests</b>.", check: ({ cache: c }) => c !== undefined && c.skew <= 1.2 && c.dbPer1000 < 100 },
+    { kind: 'task', text: "Use the largest cache (<b>600 items</b>, 60% of the catalogue) and still leave the database <b>more than 300 queries per 1,000 requests</b>. Which traffic shape does that?", check: ({ cache: c }) => c !== undefined && c.size === 600 && c.dbPer1000 > 300 },
+    { kind: 'task', text: "Get a hit ratio of <b>at least 75%</b> with <b>no more than 30</b> cached items.", check: ({ cache: c }) => c !== undefined && c.size <= 30 && c.hit >= 0.75 },
+    { kind: 'task', text: "Make LRU fall <b>at least 10 percentage points short</b> of the best possible hit ratio, with <b>100 or more</b> items cached.", check: ({ cache: c }) => c !== undefined && c.size >= 100 && c.ideal - c.hit >= 0.1 },
+    { kind: 'num', text: "A cache hit takes 1 ms and a miss takes 21 ms. At an <b>85%</b> hit ratio, what is the average latency?", answer: 4, tol: 0.05, unit: "ms" },
+    { kind: 'num', text: "36,000 requests a second reach a cache with a <b>92%</b> hit ratio. How many requests a second fall through to the database?", answer: 2880, tol: 10, unit: "req/s" },
+    { kind: 'num', text: "You have 45 TB of data, each node holds at most 8 TB, and every shard is kept on 3 replicas. How many nodes do you need?", answer: 18, tol: 0, unit: "nodes" },
+    { kind: 'num', text: "A token bucket refills at 120 requests/s and holds a burst of 500. A client sends 320 requests/s from a full bucket. After how many seconds does it start being throttled?", answer: 2.5, tol: 0.05, unit: "s" },
+    { kind: 'num', text: "A write-back cache takes 3,000 writes/s and flushes to the database every 4 seconds. If the node dies just before a flush, how many writes are lost at most?", answer: 12000, tol: 1, unit: "writes" },
+  ],
+  quiz: [
+    { q: "Which caching strategy risks losing data if the cache node dies?", opts: ["Cache-aside","Write-through","Write-back","Read-through"], a: 2, why: "Write-back confirms writes once they’re in the cache. Anything not yet flushed to the database is lost if the cache dies." },
+    { q: "A popular cache entry expires and 10,000 requests hit the database at once. This is a…", opts: ["Cache stampede","Split brain","Hot partition","Phantom read"], a: 0, why: "Fixes include request coalescing, refreshing early, and adding jitter to TTLs." },
+    { q: "Your data no longer fits on the largest machine and writes are saturated. The tool to reach for is…", opts: ["Add read replicas","Add a cache","Shard","Use a bigger load balancer"], a: 2, why: "Replicas and caches scale reads. Sharding splits data and writes across nodes." },
+    { q: "Which of these does NOT help prevent a cache stampede?", opts: ["Coalescing concurrent misses into one database read","Adding random jitter to TTLs","Refreshing hot entries shortly before they expire","Lowering every TTL to one second"], a: 3, why: "Shorter TTLs mean more expiries and more misses, so the database sees more traffic, not less. Coalescing, jitter and early refresh all spread out or merge the reloads." },
+    { q: "With cache-aside, a write usually updates the database and then deletes the cached key instead of writing the new value into the cache. Why?", opts: ["Deleting is the only operation caches support","Two concurrent writers can leave an older value in the cache if each sets it, whereas a delete lets the next read reload from the database","It removes the need for any TTL","Deletes are atomic with the database commit"], a: 1, why: "Setting the value from the app can race: the writer that finishes last on the cache may not be the one that committed last in the database. Deleting lets the next read reload the current row. A TTL is still a useful safety net, and the delete is not atomic with the commit." },
+    { q: "You must send <code>/api/*</code> to one pool of servers and <code>/images/*</code> to another. What do you need?", opts: ["A layer-4 balancer, because it routes by TCP connection","A layer-7 (HTTP) balancer, because it can inspect the request path","Round-robin DNS with two records","Consistent hashing on the client IP"], a: 1, why: "Routing by URL path needs the balancer to read the HTTP request, which is a layer-7 job. A layer-4 balancer only sees addresses and ports, and DNS or IP hashing can&apos;t look at paths." },
+    { q: "Hits take 1 ms, misses take 21 ms. With a 90% hit ratio, the average latency is closest to…", opts: ["1 ms","3 ms","11 ms","19 ms"], a: 1, why: "0.9 × 1 + 0.1 × 21 = 3 ms. The 10% of misses cost far more than the hits, so improving the hit ratio from 90% to 95% would cut the average by a third." },
+    { q: "After a user saves a profile edit and reloads, an older version appears. Reads go to asynchronous replicas. This is…", opts: ["A cache stampede","Replica lag breaking read-your-writes","Split brain","A lost update from write skew"], a: 1, why: "The write went to the primary, but the read hit a replica that hasn&apos;t applied it yet. Common fixes are reading from the primary for a short time after a write, or tracking the version a client has already seen." },
+    { q: "You shard an orders table by creation month. What is the most likely problem?", opts: ["Every new write lands on the newest shard, which becomes a hot spot","Queries for old orders become impossible","Replication lag grows on old shards","Caches stop working"], a: 0, why: "A key that grows over time sends all current traffic to one shard while old shards sit idle. Hashing a well-spread key such as the customer id distributes writes more evenly, at the cost of range queries." },
+    { q: "Which is a real cost of moving slow work onto a queue?", opts: ["Producers must wait for every consumer to finish","Consumers may see a message more than once, so handlers need to be idempotent","A queue cannot absorb traffic spikes","Messages are always delivered in a single global order"], a: 1, why: "Most queues deliver at least once, so retries and redelivery produce duplicates. Queues are good at absorbing bursts and decoupling producers, and global ordering usually isn&apos;t guaranteed once there are several consumers or partitions." },
+  ],
+  explain: { prompt: "Explain the main difference between replication and sharding.", model: "Replication copies the same data to several nodes, for read scaling and failover. Sharding splits different data across nodes, for write throughput and size. Big systems usually do both: each shard is replicated." },
+  takeaways: ["Cache for read-heavy repeats, queue for slow or spiky work, replicate for reads and failover, shard for writes and size.","Each tool brings a new problem: staleness, lag, failover, cross-shard queries.","Skewed popularity is why small caches work so well."],
+  cards: [
+    ["Cache-aside", "The app reads the cache and on a miss reads the database, then fills the cache."],
+    ["Write-through vs write-back", "Writes go to cache and DB together (safe, slower) / cache first, DB later (fast, can lose data)."],
+    ["When to shard", "When data size or write throughput exceeds what one node can handle."],
+  ],
+});

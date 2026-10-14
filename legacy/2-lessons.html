@@ -1,0 +1,467 @@
+
+<!-- ============ PART 1 · FOUNDATIONS ============ -->
+<section class="lesson" id="L-intro" hidden><div class="core">
+  <div class="prose">
+    <p>A <b>distributed system</b> is a group of computers that work together over a network and look like one system to the people using it. Your bank, your favorite streaming service and the DNS lookup behind this page all work this way.</p>
+    <p>We distribute for three reasons. <b>Scale:</b> one machine can't hold all the data or serve all the traffic. <b>Fault tolerance:</b> if one machine dies, others carry on. <b>Latency:</b> putting copies near users in Tokyo and São Paulo makes requests faster for both.</p>
+    <p>The price is that three things you took for granted on one machine stop being true:</p>
+    <ul>
+      <li><b>Partial failure.</b> Some parts break while others keep running, and you often can't tell which is which.</li>
+      <li><b>An unreliable network.</b> Messages get lost, delayed, duplicated or reordered.</li>
+      <li><b>No shared clock.</b> Each machine has its own clock, and they drift apart. "What happened first?" becomes a hard question.</li>
+    </ul>
+    <h3>How we judge correctness: safety and liveness</h3>
+    <p>Every guarantee in this course is one of two kinds. A <b>safety</b> property says something bad never happens, like "two nodes never both believe they are the leader". If it's broken, you can point to the exact moment it went wrong. A <b>liveness</b> property says something good eventually happens, like "every request eventually gets a reply". You can never catch it failing at one moment, because "eventually" might still be coming.</p>
+    <p class="callout">Most distributed algorithms protect safety at all times and give liveness only when the network behaves. Keep that pattern in mind. You'll see it again in CAP, Paxos and Raft.</p>
+  </div>
+  <div class="panel">
+    <div class="row"><h4>Lab · Safety or liveness?</h4><span class="hint" id="sl-score"></span></div>
+    <p class="hint">Sort each guarantee. You'll see right away whether you were correct.</p>
+    <div id="sl-list"></div>
+  </div>
+</div></section>
+
+<section class="lesson" id="L-fallacies" hidden><div class="core">
+  <div class="prose">
+    <p>In the 1990s, engineers at Sun Microsystems wrote down eight assumptions that programmers new to distributed systems tend to make. Every one of them is false, and every one has caused real outages. They're known as the <b>fallacies of distributed computing</b>.</p>
+    <p>Code written on one machine quietly relies on them. A function call always returns, takes nanoseconds, and nobody can intercept it. Swap the function call for a network call and all of that breaks.</p>
+  </div>
+  <div class="panel">
+    <div class="row"><h4>Lab · The eight fallacies</h4><span class="hint" id="fal-count"></span></div>
+    <p class="hint">Click a card to see what actually happens and how good designs respond.</p>
+    <div class="cards" id="fal-cards"></div>
+  </div>
+  <div class="prose">
+    <h3>How big is "latency"?</h3>
+    <p>Nanoseconds are hard to picture. Scale the numbers so that one nanosecond becomes one second, and a round trip across the Atlantic takes years. This is why <b>the number of network round trips</b> is often the most important performance metric in a distributed design.</p>
+  </div>
+  <div class="panel">
+    <div class="row"><h4>Lab · Latency ladder</h4>
+      <div class="seg" role="group" aria-label="Scale"><button id="lat-real" aria-pressed="true">Real time</button><button id="lat-human" aria-pressed="false">If 1 ns = 1 second</button></div></div>
+    <div class="ladder" id="lat-list"></div>
+    <p class="hint">Bars use a log scale. Values are typical orders of magnitude, not benchmarks.</p>
+  </div>
+</div></section>
+
+<section class="lesson" id="L-failures" hidden><div class="core">
+  <div class="prose">
+    <p>To reason about an algorithm you need to state what can go wrong. That statement is the <b>system model</b>. It has two parts: how nodes fail and how timing behaves.</p>
+    <h3>How nodes fail</h3>
+    <ul>
+      <li><b>Crash-stop:</b> the node halts and never comes back. This is the simplest case to reason about.</li>
+      <li><b>Crash-recovery:</b> the node halts, then restarts, possibly having lost whatever was only in memory. Most real servers behave like this.</li>
+      <li><b>Omission:</b> the node keeps running, but some messages it sends or receives are dropped.</li>
+      <li><b>Byzantine:</b> the node does anything at all, including lying, because of bugs, corrupted hardware or an attacker. Blockchains and aircraft controls design for this. Most datacenter systems don't.</li>
+    </ul>
+    <h3>How timing behaves</h3>
+    <ul>
+      <li><b>Synchronous:</b> messages and processing finish within known time bounds. This is easy to reason about, and it's rarely true.</li>
+      <li><b>Asynchronous:</b> there are no time bounds at all. A slow node and a dead node look exactly the same.</li>
+      <li><b>Partially synchronous:</b> the bounds hold most of the time but can be broken for a while. Nearly all practical algorithms, including Raft and Paxos, assume this.</li>
+    </ul>
+    <p class="callout">The core problem: <b>you can't tell a crashed node from a slow one.</b> All you have is a timeout, and every timeout value is a guess.</p>
+  </div>
+  <div class="panel">
+    <h4>Lab · Tune a failure detector</h4>
+    <p class="hint">A node sends a heartbeat every second. Below are 200 measured heartbeat delays, including a few garbage-collection pauses. Any delay longer than the timeout makes the monitor wrongly declare the node dead. When the node really crashes, the monitor needs the whole timeout to notice.</p>
+    <div class="slider"><label for="fd-t">Timeout <small>· declare dead after</small></label><output id="fd-t-out"></output><input type="range" id="fd-t" min="50" max="3000" step="10" value="300"></div>
+    <div class="svgbox"><svg id="fd-svg" viewBox="0 0 640 170" role="img" aria-label="Heartbeat delays with timeout line"></svg></div>
+    <div class="grid2" id="fd-verdicts"></div>
+  </div>
+  <div class="panel">
+    <div class="row"><h4>Lab · Diagnose the failure</h4><span class="hint" id="dx-score"></span></div>
+    <div id="dx-list"></div>
+  </div>
+</div></section>
+
+<section class="lesson" id="L-delivery" hidden><div class="core">
+  <div class="prose">
+    <p>A client sends "charge $20" and hears nothing back. Maybe the request was lost. Maybe the server charged the card and the reply was lost. The client <b>can't know which</b>. This is the Two Generals problem: over an unreliable link, no amount of messaging gives both sides certainty.</p>
+    <p>That leaves three delivery guarantees:</p>
+    <ul>
+      <li><b>At-most-once:</b> send once and never retry. You get no duplicates, but some messages are lost.</li>
+      <li><b>At-least-once:</b> retry until you get an acknowledgment. Nothing is lost, but some messages are processed twice.</li>
+      <li><b>Exactly-once:</b> impossible as pure delivery. It's built as <b>at-least-once delivery plus idempotent processing</b>. The client attaches a unique ID to each request, and the server remembers which IDs it has already handled.</li>
+    </ul>
+    <p>When Kafka or Flink advertise "exactly-once", they mean exactly-once <b>effect</b>, achieved through deduplication or transactions on top of retries.</p>
+  </div>
+  <div class="panel">
+    <h4>Lab · Send payments over a lossy network</h4>
+    <div class="row">
+      <div class="seg" role="group" aria-label="Strategy">
+        <button data-dl="once" aria-pressed="true">At-most-once</button>
+        <button data-dl="retry" aria-pressed="false">Retry</button>
+        <button data-dl="idem" aria-pressed="false">Retry + idempotency key</button>
+      </div>
+    </div>
+    <div class="grid2">
+      <div class="slider"><label for="dl-loss">Message loss <small>· each direction</small></label><output id="dl-loss-out"></output><input type="range" id="dl-loss" min="0" max="60" step="5" value="20"></div>
+      <div class="slider"><label for="dl-n">Payments to send</label><output id="dl-n-out"></output><input type="range" id="dl-n" min="10" max="200" step="10" value="50"></div>
+    </div>
+    <div class="row"><button class="btn primary" id="dl-run">Send payments</button><span class="hint" id="dl-desc"></span></div>
+    <div class="stats">
+      <div class="stat ok"><span class="n" id="dl-ok">–</span><span class="k">Charged exactly once</span></div>
+      <div class="stat bad"><span class="n" id="dl-lost">–</span><span class="k">Never charged (lost)</span></div>
+      <div class="stat bad"><span class="n" id="dl-dup">–</span><span class="k">Charged more than once</span></div>
+      <div class="stat warn"><span class="n" id="dl-unk">–</span><span class="k">Client unsure of outcome</span></div>
+    </div>
+    <div class="log" id="dl-log"></div>
+  </div>
+</div></section>
+
+<!-- ============ PART 2 · DATA ============ -->
+<section class="lesson" id="L-partitioning" hidden><div class="core">
+  <div class="prose">
+    <p>When data outgrows one machine, you split it. <b>Horizontal partitioning</b>, also called sharding, puts different rows on different nodes. Each node owns a slice of the keys. (Vertical partitioning, which splits by column, is a separate technique.) The hard part is deciding which key goes where so that load stays even and resizing the cluster stays cheap.</p>
+    <ul>
+      <li><b>Range partitioning:</b> each node owns a key range, such as A–F. Range scans are fast. Hot spots are common, because many names start with "S" and every new timestamp lands on the last node.</li>
+      <li><b>Hash partitioning (hash mod N):</b> node = hash(key) mod N. Load spreads evenly, but you lose range scans, and changing N moves almost every key.</li>
+      <li><b>Consistent hashing:</b> nodes and keys sit on a ring, and each key belongs to the next node clockwise. Adding a node moves only its fair share of the keys, about 1/(N+1). <b>Virtual nodes</b> (many ring positions per node) smooth out the imbalance. Cassandra, Riak and the original Dynamo design use this.</li>
+    </ul>
+  </div>
+  <div class="panel">
+    <div class="row"><h4>Lab · Shard 120 user keys</h4>
+      <div class="seg" role="group" aria-label="Partitioning strategy">
+        <button data-ps="range" aria-pressed="false">Range</button>
+        <button data-ps="mod" aria-pressed="true">Hash mod N</button>
+        <button data-ps="ring" aria-pressed="false">Consistent hashing</button>
+      </div></div>
+    <div class="row">
+      <div class="chips"><span class="lbl">Nodes:</span><button class="btn" id="ps-minus" aria-label="Remove node">−</button><b id="ps-n" class="mono"></b><button class="btn" id="ps-plus" aria-label="Add node">+</button></div>
+      <label class="chips" id="ps-vn-wrap"><input type="checkbox" id="ps-vn"> <span>Virtual nodes (200 per node)</span></label>
+    </div>
+    <div class="grid2">
+      <div class="svgbox"><svg id="ps-svg" viewBox="0 0 300 300" role="img" aria-label="Key placement"></svg></div>
+      <div style="display:grid;gap:12px;align-content:start;min-width:0">
+        <div class="bars" id="ps-bars"></div>
+        <div id="ps-verdict"></div>
+      </div>
+    </div>
+  </div>
+</div></section>
+
+<section class="lesson" id="L-replication" hidden><div class="core">
+  <div class="prose">
+    <p><b>Replication</b> keeps copies of the same data on several nodes. You get availability (others take over), durability (data survives disk loss), read scaling, and lower latency for distant users. The hard part is keeping the copies in agreement.</p>
+    <ul>
+      <li><b>Primary-backup (single leader):</b> all writes go to one primary, which ships them to backups. With <b>synchronous</b> replication the primary waits for backups before confirming: safe, but slow, and one slow backup stalls everyone. With <b>asynchronous</b> replication it confirms immediately: fast, but backups lag, and a failover can lose confirmed writes. PostgreSQL, MySQL and MongoDB work this way.</li>
+      <li><b>Multi-primary:</b> several nodes accept writes, which is useful across regions or offline. Concurrent writes conflict and need a resolution rule: last-write-wins, a custom merge, or CRDTs.</li>
+      <li><b>Leaderless:</b> the client writes to several replicas directly and reads from several. Quorums decide what counts as success. This is the design from Amazon's 2007 Dynamo paper, covered in the next lesson.</li>
+    </ul>
+    <p>Below is a classic illustration of why replication makes even "read the latest value" tricky. Client 1 writes <code>x = 1</code> to primary A. Client 2 then reads <code>x</code> from replica C.</p>
+  </div>
+  <div class="panel">
+    <div class="row"><h4>Lab · Replication timeline</h4>
+      <div class="seg" role="group" aria-label="Replication mode"><button data-rm="async" aria-pressed="true">Asynchronous</button><button data-rm="sync" aria-pressed="false">Synchronous</button></div></div>
+    <div class="grid2">
+      <div class="slider"><label for="rp-lag">Replication lag to C</label><output id="rp-lag-out"></output><input type="range" id="rp-lag" min="20" max="200" step="5" value="120"></div>
+      <div class="slider"><label for="rp-read">Client 2 reads C at</label><output id="rp-read-out"></output><input type="range" id="rp-read" min="0" max="300" step="5" value="140"></div>
+    </div>
+    <label class="chips"><input type="checkbox" id="rp-crash"> <span>Primary A crashes at 8 ms, and B is promoted</span></label>
+    <div class="svgbox"><svg id="rp-svg" viewBox="0 0 640 250" role="img" aria-label="Timeline of write replication and read"></svg></div>
+    <div class="grid2" id="rp-verdicts"></div>
+  </div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Approach</th><th>Writes go to</th><th>Conflicts</th><th>Typical use</th></tr></thead>
+    <tbody>
+      <tr><td><b>Primary-backup</b></td><td>One leader</td><td>None while one leader exists</td><td>Relational databases, MongoDB, Kafka partitions</td></tr>
+      <tr><td><b>Multi-primary</b></td><td>Any of several leaders</td><td>Yes, need a merge or last-write-wins</td><td>Multi-region databases, offline apps, CouchDB</td></tr>
+      <tr><td><b>Leaderless</b></td><td>Any W of N replicas</td><td>Yes, versioned with vector clocks or LWW</td><td>Cassandra, Riak, the Dynamo paper (2007)</td></tr>
+    </tbody>
+  </table></div>
+</div></section>
+
+<section class="lesson" id="L-quorums" hidden><div class="core">
+  <div class="prose">
+    <p>In leaderless replication, each value lives on <b>N</b> replicas. A write succeeds when <b>W</b> of them confirm, and a read asks <b>R</b> of them, keeping the value with the newest version.</p>
+    <p>If <b>R + W &gt; N</b>, every group of replicas you read from overlaps with every group that accepted the latest write, by the pigeonhole principle. At least one replica in your read has the newest value. If <b>2W &gt; N</b>, the two sides of a partition can't both accept writes, because only one side can gather W replicas. Concurrent writes that reach overlapping replicas can still both succeed and have to be resolved by version.</p>
+    <p>Lowering W or R makes requests faster and more failure-tolerant but allows stale reads. This is the PACELC trade-off you can tune per query: in Cassandra, <code>ONE</code> is fast and AP, while <code>QUORUM</code> is slower and consistent.</p>
+    <p class="callout warn">One caveat: quorum overlap alone doesn't give full linearizability. Read repair, sloppy quorums and clock-based conflict resolution all open gaps. The overlap is necessary but not sufficient.</p>
+  </div>
+  <div class="panel">
+    <h4>Lab · Quorum calculator</h4>
+    <div class="grid2">
+      <div style="display:grid;gap:12px;align-content:start">
+        <div class="slider"><label for="q-n">N <small>· copies of each value</small></label><output id="q-n-out"></output><input type="range" id="q-n" min="1" max="7" value="3"></div>
+        <div class="slider"><label for="q-w">W <small>· confirmations per write</small></label><output id="q-w-out"></output><input type="range" id="q-w" min="1" max="7" value="1"></div>
+        <div class="slider"><label for="q-r">R <small>· replicas asked per read</small></label><output id="q-r-out"></output><input type="range" id="q-r" min="1" max="7" value="1"></div>
+        <div class="chips" id="q-presets"><span class="lbl">Presets:</span></div>
+      </div>
+      <div style="display:grid;gap:12px;min-width:0;align-content:start">
+        <p class="mono" id="q-formula"></p>
+        <div class="replicas" id="q-reps"></div>
+        <p class="hint">Worst case shown: the write lands on the fastest W replicas, and the read hits replicas the write skipped whenever it can. Click a replica to fail it.</p>
+      </div>
+    </div>
+    <div class="grid2" id="q-verdicts"></div>
+  </div>
+</div></section>
+
+<!-- ============ PART 3 · GUARANTEES ============ -->
+<section class="lesson" id="L-cap" hidden><div class="core">
+  <div class="prose">
+    <p>The <b>CAP theorem</b>, proved by Gilbert and Lynch in 2002 after Eric Brewer's conjecture, involves three properties:</p>
+    <ul>
+      <li><b>Consistency (C):</b> every read returns the most recent completed write, or an error. Formally this is linearizability, which is stricter than the C in ACID.</li>
+      <li><b>Availability (A):</b> every request to a non-failed node gets a non-error response.</li>
+      <li><b>Partition tolerance (P):</b> the system keeps working even if the network drops messages between nodes.</li>
+    </ul>
+    <p>The theorem says that <b>during a network partition you can't have both C and A</b>. A node cut off from the others must either refuse the request (losing A) or answer from its own possibly stale copy (losing C).</p>
+    <p>The popular "pick two" phrasing is misleading. Partitions aren't optional, so "CA" just describes a single-node system. When the network is healthy you can have both. PACELC extends the idea: <b>if Partition, choose A or C; Else, choose Latency or Consistency.</b></p>
+  </div>
+  <div class="panel">
+    <div class="row">
+      <div class="seg" role="group" aria-label="Consistency mode"><button id="mode-cp" aria-pressed="true">CP · consistent</button><button id="mode-ap" aria-pressed="false">AP · available</button></div>
+      <span class="hint mono" id="latest"></span>
+    </div>
+    <p class="hint" id="mode-desc"></p>
+    <div class="grid2">
+      <div style="display:grid;gap:10px;min-width:0">
+        <div class="svgbox" style="max-width:440px;justify-self:center"><svg viewBox="0 0 400 350" role="img" aria-label="Three nodes A, B and C"><g id="links"></g><g id="nodes"></g><g id="packets"></g></svg></div>
+        <p class="hint" style="text-align:center">Click a link to cut or repair it.</p>
+        <div class="chips"><span class="lbl">Network:</span>
+          <button class="chip" data-preset="healthy">Healthy</button><button class="chip" data-preset="isoC">Isolate C</button>
+          <button class="chip" data-preset="isoA">Isolate A</button><button class="chip" data-preset="split">Cut everything</button></div>
+        <div class="clients" id="clients"></div>
+        <p class="hint">Next write sets the value to <span class="swatch" id="next-sw"></span> <b id="next-name"></b></p>
+      </div>
+      <div style="display:grid;gap:10px;align-content:start;min-width:0">
+        <div class="row"><h4>Guided experiment</h4><button class="linkbtn" id="reset">Reset lab</button></div>
+        <ol class="steps" id="steps"></ol>
+      </div>
+    </div>
+    <div class="stats">
+      <div class="stat ok"><span class="n" id="s-acked">0</span><span class="k">Writes confirmed</span></div>
+      <div class="stat bad"><span class="n" id="s-rejected">0</span><span class="k">Refused · availability lost</span></div>
+      <div class="stat warn"><span class="n" id="s-stale">0</span><span class="k">Stale reads · consistency lost</span></div>
+      <div class="stat bad"><span class="n" id="s-lost">0</span><span class="k">Confirmed writes lost</span></div>
+    </div>
+    <div class="log" id="log" aria-live="polite"></div>
+  </div>
+</div></section>
+
+<section class="lesson" id="L-models" hidden><div class="core">
+  <div class="prose">
+    <p>"Consistent" isn't a yes-or-no property. A <b>consistency model</b> defines which <b>histories</b>, meaning sequences of operations and the results clients observed, a system is allowed to produce. Model A is <b>stronger</b> than model B if it allows fewer histories. Stronger models are easier to build applications on, but they need more coordination, which costs latency and availability.</p>
+    <ul>
+      <li><b>Linearizability:</b> each operation appears to take effect at one instant between when it was sent and when it was confirmed. After a write is confirmed, every later read sees it. You can treat the system as a single copy, which is what makes locks, counters and compare-and-swap possible.</li>
+      <li><b>Sequential consistency:</b> everyone sees all operations in the <b>same order</b>, and each client's own operations stay in program order. That order doesn't have to match real time, so a read can lag behind.</li>
+      <li><b>Causal consistency:</b> only operations that are <b>causally related</b> must be seen in the same order, such as a reply and the comment it answers. Unrelated operations may appear in different orders to different clients. It's among the strongest models that can stay available during a partition, provided clients keep talking to the same replica.</li>
+      <li><b>Eventual consistency:</b> if writes stop, all replicas eventually converge. Until then, almost any order or stale value is possible.</li>
+    </ul>
+  </div>
+  <div class="panel">
+    <h4>Lab · Same story, different models</h4>
+    <div class="grid2" style="grid-template-columns:minmax(0,220px) minmax(0,1fr)">
+      <div style="display:grid;gap:6px;align-content:start" id="m-list"></div>
+      <div style="display:grid;gap:12px;min-width:0">
+        <p class="callout"><b>The story.</b> Alice posts <i>"Our flight landed."</i> Bob sees it and replies <i>"Welcome home!"</i> Both writes are confirmed. Then Carol opens the thread from a replica on another continent. Separately, Dave and Erin post at the same moment from different regions.</p>
+        <ul class="outcomes" id="m-outcomes"></ul>
+        <div class="prose" id="m-facts"></div>
+      </div>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="row"><h4>Lab · Judge the history</h4><span class="hint" id="hj-score"></span></div>
+    <p class="hint">Each history shows when an operation started and finished, measured in ms. Is it linearizable? Ask yourself whether you can pick one instant inside each operation's interval so that the results make sense for a single copy of <code>x</code>, which starts at 0.</p>
+    <div id="hj-list" style="display:grid;gap:14px"></div>
+  </div>
+</div></section>
+
+<section class="lesson" id="L-isolation" hidden><div class="core">
+  <div class="prose">
+    <p>Consistency models describe single operations on replicated data. <b>Isolation levels</b> describe what concurrent <b>transactions</b> can see of each other. They're the I in <b>ACID</b>:</p>
+    <ul>
+      <li><b>Atomicity:</b> all of a transaction's writes happen, or none do.</li>
+      <li><b>Consistency:</b> application rules, like "balances never go negative", hold before and after. This is mostly the application's job.</li>
+      <li><b>Isolation:</b> concurrent transactions don't interfere. At the strongest level, <b>serializable</b>, the result matches some one-at-a-time order.</li>
+      <li><b>Durability:</b> once committed, the data survives crashes.</li>
+    </ul>
+    <p>Weaker isolation levels are faster but allow <b>anomalies</b>. Defaults differ: PostgreSQL uses Read Committed, MySQL's InnoDB uses Repeatable Read, and Oracle's "serializable" is actually snapshot isolation.</p>
+    <h3>How databases enforce isolation</h3>
+    <ul>
+      <li><b>Pessimistic (two-phase locking):</b> take locks and hold them until commit. Correct, but readers and writers block each other, and deadlocks happen.</li>
+      <li><b>Optimistic (OCC):</b> run without locks, check for conflicts at commit, and abort if any are found. Works well when conflicts are rare.</li>
+      <li><b>MVCC snapshots:</b> each transaction reads a consistent snapshot, so readers never block writers. This gives snapshot isolation. <b>Serializable Snapshot Isolation</b> (PostgreSQL's SERIALIZABLE) adds detection of dangerous read-write patterns on top.</li>
+    </ul>
+    <p class="callout">The overall picture: in distributed databases, <b>strict serializability</b> means serializable plus linearizable. Spanner and FoundationDB provide it, and it's the strongest guarantee you can get.</p>
+  </div>
+  <div class="panel">
+    <h4>Lab · Run an anomaly at an isolation level</h4>
+    <div class="chips" id="ix-levels"><span class="lbl">Level:</span></div>
+    <div class="chips" id="ix-anoms"><span class="lbl">Anomaly:</span></div>
+    <div id="ix-run" style="display:grid;gap:10px"></div>
+    <div class="table-wrap"><table class="ixtable" id="ix-table"></table>
+      <p class="hint" id="ix-note"></p></div>
+  </div>
+</div></section>
+
+<!-- ============ PART 4 · AGREEMENT ============ -->
+<section class="lesson" id="L-commit" hidden><div class="core">
+  <div class="prose">
+    <p>A transaction that touches several nodes, say Orders, Payments and Inventory, must commit everywhere or nowhere. This is <b>atomic commitment</b>.</p>
+    <h3>Two-phase commit (2PC)</h3>
+    <ol>
+      <li><b>Prepare:</b> the coordinator asks every participant "can you commit?". A participant that votes <b>yes</b> writes everything durably and promises to commit if told to. From then on it can't decide by itself.</li>
+      <li><b>Commit or abort:</b> if every vote is yes, the coordinator logs COMMIT and tells everyone. If any vote is no or a participant times out, it tells everyone to abort.</li>
+    </ol>
+    <p>The weak point: if the coordinator crashes after participants voted yes, they're <b>in doubt</b>. They can't commit or abort, and they keep holding locks until the coordinator returns. <b>2PC is blocking.</b></p>
+    <ul>
+      <li><b>Three-phase commit (3PC)</b> adds a "pre-commit" round so participants can finish without the coordinator. It works only with bounded network delays, and a partition can still make it inconsistent, so it's rarely used.</li>
+      <li><b>Consensus-based commit</b> replicates the coordinator's decision with Paxos or Raft, so the crash of one machine can't block the transaction. Spanner and CockroachDB do this.</li>
+      <li><b>Sagas</b> handle long-running workflows across services. They're a chain of local transactions, each with a <b>compensating action</b> that undoes it. A saga gives up isolation, and other services can see the intermediate states.</li>
+    </ul>
+  </div>
+  <div class="panel">
+    <h4>Lab · Two-phase commit</h4>
+    <div class="chips">
+      <label class="chips"><input type="checkbox" id="tpc-no"> Inventory votes NO (out of stock)</label>
+      <label class="chips"><input type="checkbox" id="tpc-crash"> Coordinator crashes after collecting votes</label>
+    </div>
+    <div class="row"><div class="chips"><button class="btn primary" id="tpc-step">Next step</button><button class="btn" id="tpc-all">Run to end</button><button class="btn" id="tpc-recover" disabled>Recover coordinator</button><button class="linkbtn" id="tpc-reset">Reset</button></div><span class="hint mono" id="tpc-phase"></span></div>
+    <div class="ptrow" id="tpc-nodes"></div>
+    <div class="log" id="tpc-log"></div>
+  </div>
+  <div class="panel">
+    <h4>Lab · Saga with compensations</h4>
+    <div class="chips" id="sg-fail"><span class="lbl">Make this step fail:</span></div>
+    <div class="row"><button class="btn primary" id="sg-run">Run saga</button><span class="hint" id="sg-result"></span></div>
+    <div class="ptrow" id="sg-steps"></div>
+    <div class="log" id="sg-log"></div>
+  </div>
+</div></section>
+
+<section class="lesson" id="L-consensus" hidden><div class="core">
+  <div class="prose">
+    <p><b>Consensus</b> is getting several nodes to agree on one value, despite failures. A correct algorithm guarantees:</p>
+    <ul>
+      <li><b>Agreement:</b> no two nodes decide different values. (Safety.)</li>
+      <li><b>Validity:</b> the decided value was proposed by some node. (Safety.)</li>
+      <li><b>Termination:</b> every node that doesn't crash eventually decides. (Liveness.)</li>
+    </ul>
+    <p>Agree on a sequence of values, one log entry at a time, and you get a <b>replicated state machine</b>. Every node applies the same commands in the same order, so they all end up in the same state. That's how etcd, ZooKeeper, Consul and CockroachDB keep their replicas identical.</p>
+    <h3>FLP impossibility</h3>
+    <p>In 1985, Fischer, Lynch and Paterson proved that in a <b>fully asynchronous</b> system, no deterministic algorithm can guarantee consensus if even <b>one</b> node may crash. The reason is the same problem as before: you can't tell slow from dead. Real algorithms keep safety at all times and give up termination only while the network misbehaves, relying on timeouts and randomness to get unstuck.</p>
+    <h3>Paxos and Raft</h3>
+    <p><b>Paxos</b> (Lamport) uses numbered proposals. A proposer first gets <b>promises</b> from a majority to ignore older proposals, then asks that majority to <b>accept</b> a value, adopting any value that might already have been chosen. Any two majorities overlap, so two different values can never both be chosen. Multi-Paxos runs the protocol with a stable leader for efficiency.</p>
+    <p><b>Raft</b> (Ongaro and Ousterhout, 2014) was designed to be easier to understand and splits the problem into parts:</p>
+    <ul>
+      <li><b>Leader election:</b> time is divided into <b>terms</b>. A follower that hears nothing from a leader before its <b>randomized timeout</b> becomes a candidate, starts a new term and asks for votes. A majority makes it leader.</li>
+      <li><b>Log replication:</b> the leader appends client commands to its log and sends them to followers. An entry is <b>committed</b> once a majority store it. (Subtlety: a leader only commits this way for entries from its <i>current term</i>; older entries become committed along with them.)</li>
+      <li><b>Safety:</b> a node only votes for a candidate whose log is at least as up to date as its own, so a new leader always has every committed entry.</li>
+    </ul>
+  </div>
+  <div class="panel">
+    <div class="row"><h4>Lab · Raft cluster</h4><span class="hint mono" id="rf-term"></span></div>
+    <div class="chips">
+      <button class="btn primary" id="rf-write">Client write</button>
+      <button class="btn" id="rf-tick">Let election timeouts fire</button>
+      <button class="btn" id="rf-crash">Crash leader</button>
+      <button class="btn" id="rf-restart">Restart crashed nodes</button>
+    </div>
+    <div class="chips"><span class="lbl">Network:</span><button class="chip" id="rf-split">Split leader + 1 from the other 3</button><button class="chip" id="rf-heal">Heal</button><button class="linkbtn" id="rf-reset">Reset</button></div>
+    <div class="svgbox" style="max-width:560px;justify-self:center"><svg id="rf-svg" viewBox="0 0 520 400" role="img" aria-label="Five Raft nodes with logs"></svg></div>
+    <p class="hint">Filled squares are committed log entries, outlined squares are not committed yet. The number on each square is the term it was written in.</p>
+    <div class="log" id="rf-log"></div>
+  </div>
+</div></section>
+
+<!-- ============ PART 5 · TIME ============ -->
+<section class="lesson" id="L-clocks" hidden><div class="core">
+  <div class="prose">
+    <p>Physical clocks drift. A typical quartz crystal is off by about 20 parts per million, close to 2 seconds a day. NTP corrects them to within a few milliseconds over the internet, but clocks can still jump backward after a sync or a leap second. <b>Sorting events by wall-clock time across machines is unreliable.</b> Spanner gets around this with GPS and atomic clocks plus explicit uncertainty intervals (TrueTime), and it waits out the uncertainty before committing.</p>
+    <h3>Happened-before</h3>
+    <p>Lamport (1978) defined order without clocks. Event <b>a happened before b</b> (a → b) if a and b are on the same process and a came first, or if a sends a message and b receives it, or if this follows by chaining (transitivity). If neither a → b nor b → a, the events are <b>concurrent</b>. That doesn't mean they happened at the same instant, only that neither could have influenced the other.</p>
+    <ul>
+      <li><b>Lamport clock:</b> one counter per process. Add 1 on every event. On receiving a message, set the counter to max(local, received) + 1. If a → b then L(a) &lt; L(b), but the converse doesn't hold: a smaller number doesn't prove a happened first.</li>
+      <li><b>Vector clock:</b> one counter per process, kept as a vector. On receiving a message, take the element-wise maximum, then add 1 to your own entry. Now a → b <b>if and only if</b> V(a) &lt; V(b). If neither vector is less than the other, the events are concurrent.</li>
+      <li><b>Version vectors</b> apply the same idea to versions of a data item, so replicas can tell "newer" from "conflicting". Riak and the original Dynamo use them. <b>Dotted version vectors</b> fix the problem of siblings piling up when many clients write.</li>
+      <li><b>Distributed snapshots</b> (Chandy-Lamport) use marker messages to record a consistent global state without stopping the system. Flink builds its checkpoints this way.</li>
+    </ul>
+  </div>
+  <div class="panel">
+    <div class="row"><h4>Lab · Space-time diagram</h4><button class="linkbtn" id="vc-reset">Reset to sample</button></div>
+    <div class="grid3" id="vc-ctrl"></div>
+    <div id="vc-flight" class="chips"></div>
+    <div class="svgbox"><svg id="vc-svg" viewBox="0 0 640 230" role="img" aria-label="Three process timelines with events and messages"></svg></div>
+    <p class="hint">Click two events to compare them.</p>
+    <div id="vc-cmp"></div>
+  </div>
+</div></section>
+
+<!-- ============ PART 6 · PRACTICE ============ -->
+<section class="lesson" id="L-production" hidden><div class="core">
+  <div class="prose">
+    <p>Theory tells you what's possible. Production adds gray failures, overload, deploys and humans. These patterns show up in almost every reliable system:</p>
+    <ul>
+      <li><b>Timeouts everywhere.</b> A call without a timeout can wait forever. Set the timeout from measured latency percentiles, such as p99.9.</li>
+      <li><b>Retries with exponential backoff and jitter.</b> Retry transient errors, wait longer each time, and randomize the wait so thousands of clients don't retry at the same moment.</li>
+      <li><b>Idempotency keys.</b> Make retries safe, as in the delivery lesson.</li>
+      <li><b>Circuit breakers.</b> After repeated failures, stop calling a dependency for a while. Failing fast protects both sides.</li>
+      <li><b>Bulkheads.</b> Give each dependency its own thread pools and connection limits, so one slow service can't use up every resource.</li>
+      <li><b>Backpressure and load shedding.</b> When overloaded, push back on producers or reject low-priority work early. Queues that never fill up hide problems until memory runs out.</li>
+      <li><b>Leases and fencing tokens.</b> Grant time-limited ownership, and have storage reject writes that carry an outdated token.</li>
+      <li><b>Backward-compatible changes.</b> Old and new versions run side by side during every deploy. Change schemas and APIs in steps: add, migrate, then remove.</li>
+    </ul>
+  </div>
+  <div class="panel">
+    <h4>Lab · Retry storm</h4>
+    <p class="hint">A dependency blips, and 1,000 clients fail at the same moment and retry 4 times. The chart shows when their retries arrive over the next 8 seconds.</p>
+    <div class="seg" role="group" aria-label="Retry strategy">
+      <button data-bo="fixed" aria-pressed="true">Fixed 1 s</button><button data-bo="exp" aria-pressed="false">Exponential</button>
+      <button data-bo="jitter" aria-pressed="false">Exponential + full jitter</button>
+    </div>
+    <div class="histo" id="bo-histo" aria-label="Retries per 100 ms"></div>
+    <div class="row hint"><span>0 s</span><span id="bo-peak"></span><span>8 s</span></div>
+  </div>
+  <div class="prose"><h3>Failure modes to design for</h3></div>
+  <div class="fails" id="fails"></div>
+</div></section>
+
+<section class="lesson" id="L-systems" hidden><div class="core">
+  <div class="prose">
+    <p>Real systems combine everything in this course. The labels below describe <b>default</b> behavior, and most systems can be configured to lean the other way. PACELC: during a <b>P</b>artition choose <b>A</b> or <b>C</b>; <b>E</b>lse choose <b>L</b>atency or <b>C</b>onsistency.</p>
+    <ul>
+      <li><b>GFS and HDFS</b> split files into large chunks of 64–128 MB, replicated three times. A single master holds the metadata. They're optimized for appends and big sequential reads, and GFS's relaxed consistency let concurrent appends produce duplicates.</li>
+      <li><b>ZooKeeper</b> runs the ZAB consensus protocol to give linearizable writes and ordered reads. Locks, leader election and configuration are built from its small primitives: ephemeral and sequential znodes plus watches.</li>
+      <li><b>BigTable and HBase</b> divide a sorted key space into regions, each served by one server, which gives strong consistency per row. Data lands in a write-ahead log and memtable, then is flushed to immutable SSTables.</li>
+      <li><b>Cassandra</b> is leaderless with consistent hashing and gossip, and you choose a consistency level per query. Its lightweight transactions use Paxos for compare-and-set.</li>
+      <li><b>Spanner</b> combines Paxos groups per shard, 2PC across shards and TrueTime timestamps to provide externally consistent (strictly serializable) global transactions.</li>
+      <li><b>Kafka</b> stores partitioned, replicated logs. Producers choose <code>acks</code>, and idempotent producers plus transactions give exactly-once effect within Kafka.</li>
+      <li><b>MapReduce, Spark and Flink</b> recover from failure by re-running deterministic tasks. Spark recomputes from lineage, and Flink restores from Chandy-Lamport-style checkpoints and uses watermarks to handle events that arrive late.</li>
+    </ul>
+  </div>
+  <div class="chips" id="sys-filters"></div>
+  <div class="table-wrap"><table style="min-width:760px">
+    <thead><tr><th>System</th><th>Kind</th><th>Partition</th><th>PACELC</th><th>How it behaves</th></tr></thead>
+    <tbody id="sys-body"></tbody>
+  </table></div>
+  <div class="panel">
+    <div class="row"><h4>Lab · Pick the right store</h4><span class="hint" id="mt-score"></span></div>
+    <div class="match" id="mt-list"></div>
+  </div>
+</div></section>
+
+<!-- ============ REVIEW & EXAM ============ -->
+<section class="lesson" id="L-review" hidden><div class="core">
+  <div class="prose">
+    <p><b>Spaced repetition</b> is one of the most reliable findings in learning research. You remember far more when you recall material at growing intervals than when you reread it in one sitting. Every lesson adds flashcards to this deck. Cards you get right move to a box with a longer interval (1, 3, 7, then 14 days). Cards you miss go back to box 1.</p>
+  </div>
+  <div class="boxes" id="rv-boxes"></div>
+  <div id="rv-area"></div>
+</div></section>
+
+<section class="lesson" id="L-exam" hidden><div class="core">
+  <div class="prose">
+    <p>This exam <b>mixes topics</b> on purpose. Answering questions from different lessons side by side forces you to work out which idea applies, which is the skill you'll need in real design reviews. Part 1 is a set of design scenarios. Part 2 draws questions from every lesson's quiz.</p>
+  </div>
+  <div class="panel">
+    <div class="row"><h4>Part 1 · During a partition, which would you protect?</h4><span class="hint" id="ex-score1"></span></div>
+    <div class="chips" id="ex-filters"></div>
+    <div id="ex-scen" style="display:grid;gap:12px"></div>
+  </div>
+  <div class="panel">
+    <div class="row"><h4>Part 2 · Mixed questions</h4><div class="chips"><span class="hint" id="ex-score2"></span><button class="btn" id="ex-reroll">New set</button></div></div>
+    <div id="ex-mixed" style="display:grid;gap:12px"></div>
+  </div>
+</div></section>

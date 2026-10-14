@@ -1,0 +1,40 @@
+import { defineLesson } from '../types';
+
+export default defineLesson({
+  id: "fallacies",
+  part: "found",
+  title: "Fallacies & latency",
+  minutes: 10,
+  objectives: ["List the eight fallacies of distributed computing","Estimate the cost of network round trips"],
+  predict: { q: "If 1 nanosecond took 1 second, about how long would a round trip from California to Europe take?", opts: ["About a minute","About a day","About a month","About 5 years"], a: 3, reveal: "At about 150 ms, scaled up a billion times, it’s close to 5 years. Network round trips are huge compared to computation." },
+  practice: [
+    { kind: 'task', text: "Reveal all eight fallacy cards.", check: ({ fallacies: f }) => f !== undefined && f.revealed >= 8 },
+    { kind: 'num', text: "A page makes 6 sequential calls between us-east and eu-west, about 80 ms per round trip. What’s the minimum network time in ms?", answer: 480, tol: 1, unit: "ms" },
+    { kind: 'num', text: "Same 6 calls, but made in parallel. Minimum network time in ms?", answer: 80, tol: 1, unit: "ms" },
+    { kind: 'task', text: "Switch the latency ladder to the <b>If 1 ns = 1 second</b> scale.", check: ({ latencyLadder: l }) => l?.human === true },
+    { kind: 'task', text: "Reveal <b>only</b> the two fallacies about security and about money: leave exactly <i>The network is secure</i> and <i>Transport cost is zero</i> open, and every other card closed.", check: ({ fallacies: f }) => f !== undefined && f.open.length === 2 && f.open.includes(3) && f.open.includes(6) },
+    { kind: 'num', text: "A page makes 50 sequential calls, and each succeeds 99% of the time, independently. What is the chance that <b>every</b> call succeeds, in %?", answer: 60.5, tol: 0.5, unit: "%" },
+    { kind: 'num', text: "A page makes 12 calls at 80 ms per round trip. The first 4 are independent and can run in parallel. The other 8 each need the previous result, so they run one after another after those 4 finish. Minimum network time in ms?", answer: 720, tol: 1, unit: "ms" },
+    { kind: 'num', text: "Use the latency ladder: how many main-memory references (100 ns each) fit into one California ↔ Netherlands round trip (150 ms)? Answer in millions.", answer: 1.5, tol: 0.05, unit: "million" },
+    { kind: 'num', text: "One request downloads a 40 MB response over a 200 Mbps link (1 byte = 8 bits), plus one 80 ms round trip. How long until the last byte arrives, in ms? Ignore all other overhead.", answer: 1680, tol: 10, unit: "ms" },
+  ],
+  quiz: [
+    { q: "Which design choice responds to \"the network is reliable\" being false?", opts: ["Retries with idempotency","Larger CPUs","More logging","Monorepos"], a: 0, why: "Messages will be lost, so you retry, and you make retries safe with idempotency." },
+    { q: "\"Topology doesn’t change\" is false because…", opts: ["Servers are added, removed and moved, and IPs change all the time","Networks are wireless","DNS is broken","TCP forbids it"], a: 0, why: "Autoscaling, failover and deploys constantly reshape the network. Use service discovery, not hard-coded addresses." },
+    { q: "Batching 100 small requests into one mainly fights which fallacy?", opts: ["Latency is zero","The network is secure","There is one administrator","The network is homogeneous"], a: 0, why: "You pay round-trip latency once instead of 100 times." },
+    { q: "Capping every response at 100 items and paging through the rest mainly answers which fallacy?", opts: ["Bandwidth is infinite","The network is reliable","The network is secure","There is one administrator"], a: 0, why: "Huge payloads saturate links and slow every other caller. Pagination keeps each transfer small so one chatty endpoint cannot starve the rest." },
+    { q: "Mutual TLS between internal services responds to which fallacy?", opts: ["The network is secure","Topology doesn’t change","The network is homogeneous","Latency is zero"], a: 0, why: "Traffic inside a datacenter can still be sniffed or spoofed, so each side proves its identity and encrypts the link instead of trusting the network." },
+    { q: "A page needs 20 independent calls of 50 ms each. About how long does it take sequentially versus fully in parallel?", opts: ["1000 ms vs 50 ms","1000 ms vs 1000 ms","50 ms vs 1000 ms","20 ms vs 50 ms"], a: 0, why: "Sequential time adds up (20 × 50 ms). Independent calls in parallel cost about one round trip. The slowest one sets the total, so dependency order decides your latency." },
+    { q: "Which of these is NOT one of the eight classic fallacies?", opts: ["Clocks are synchronized across machines","Bandwidth is infinite","Latency is zero","Transport cost is zero"], a: 0, why: "Missing shared time is a core difficulty of distributed systems, but it is not on the original list of eight. The list covers reliability, latency, bandwidth, security, topology, administration, transport cost and homogeneity." },
+    { q: "A gateway owned by one team silently enforces a 10 s timeout, while the service behind it, owned by another team, allows 30 s for slow requests. Which fallacy is this?", opts: ["There is one administrator","Latency is zero","The network is secure","Topology doesn’t change"], a: 0, why: "Several teams and vendors configure parts of every request path, and their settings interact. Defensive defaults and tracing across boundaries make such mismatches visible." },
+    { q: "Which example best shows that \"transport cost is zero\" is false?", opts: ["Cross-zone traffic is billed, and serializing JSON burns CPU","Round trips between regions take around 100 ms","Packets are sometimes reordered","Servers are replaced during deploys"], a: 0, why: "Moving data has a price in money and CPU, not only in time. The other options describe latency, reliability and topology." },
+    { q: "You move a chatty service from the same rack to another region. Which cost grows the most?", opts: ["Per-call latency, multiplied by the number of sequential calls","CPU spent on serialization","The number of calls the service makes","Bytes per response"], a: 0, why: "Nothing about the calls themselves changes, but each round trip now costs about 100 ms instead of 0.5 ms. A flow with many sequential calls can become hundreds of times slower." },
+  ],
+  explain: { prompt: "Pick one fallacy and explain how it could cause an outage.", model: "Example: \"latency is zero\". A service makes 50 sequential calls to a database in another region. Each costs 70 ms, so the page takes 3.5 seconds, connections pile up, and the service falls over under normal load." },
+  takeaways: ["All eight fallacies are false in every real network.","Count network round trips, and batch or parallelize them.","A network call is never \"just a function call\"."],
+  cards: [
+    ["The 8 fallacies", "Reliable network, zero latency, infinite bandwidth, secure network, unchanging topology, one administrator, zero transport cost, homogeneous network."],
+    ["Typical same-datacenter round trip", "About 0.5 ms."],
+    ["Typical transatlantic round trip", "About 70–150 ms."],
+  ],
+});
