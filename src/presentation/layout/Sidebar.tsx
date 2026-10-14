@@ -2,8 +2,7 @@ import { useState } from 'react';
 import { LESSONS } from '../../domain/curriculum/catalog';
 import { PARTS, type PageId } from '../../domain/curriculum/ids';
 import { lessonStatus } from '../../domain/learning/progress';
-import { useClock, useProgress } from '../hooks/app';
-import { dueCards } from '../../domain/learning/deck';
+import { useProgress } from '../hooks/app';
 import { completedCount, minutesLeft, nextLesson } from '../../domain/learning/summary';
 import { pageTitle, SPECIAL, type SpecialKey } from './nav';
 import { ThemeToggle } from './ThemeToggle';
@@ -11,9 +10,7 @@ import { ThemeToggle } from './ThemeToggle';
 export const Sidebar = ({ current }: { readonly current: PageId }) => {
   const progress = useProgress(p => p);
   const [open, setOpen] = useState(() => window.matchMedia?.('(min-width: 961px)').matches ?? true);
-  const clock = useClock();
   const done = completedCount(progress);
-  const due = dueCards(progress, clock.now()).length;
   const currentTitle = pageTitle(current);
   const next = nextLesson(progress);
   const left = minutesLeft(progress);
@@ -46,7 +43,7 @@ export const Sidebar = ({ current }: { readonly current: PageId }) => {
               })}
               {specials.map(k => (
                 <a key={k} className="navlink" href={`#${k}`} aria-current={k === current ? 'page' : undefined}>
-                  <span className="st">★</span><span>{SPECIAL[k].title}</span>{k === 'review' && due > 0 ? <span className="badge">{due}</span> : <span />}
+                  <span className="st">★</span><span>{SPECIAL[k].title}</span><span />
                 </a>
               ))}
             </div>
